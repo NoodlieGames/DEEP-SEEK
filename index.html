@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DEEP SEEK - The Abyss Awaits</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #020617;
+            font-family: 'Segoe UI', 'Cairo', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        @media screen and (orientation: portrait) and (max-width: 900px) {
+            #game-container {
+                transform: rotate(90deg);
+                transform-origin: center;
+                width: 100vh;
+                height: 100vw;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                margin-left: -50vh;
+                margin-top: -50vw;
+            }
+        }
+        canvas {
+            display: block;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 50;
+        }
+        .modal {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.98);
+            border: 2px solid #38bdf8;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+            color: white;
+            max-width: 90%;
+            width: 480px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 30px rgba(56, 189, 248, 0.2);
+        }
+        .rtl { direction: rtl; font-family: 'Cairo', sans-serif; }
+        .ltr { direction: ltr; }
+        
+        .shop-item {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #334155;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .shop-item:hover:not(.disabled):not(.maxed) {
+            border-color: #38bdf8;
+            transform: translateY(-2px);
+            background: rgba(51, 65, 85, 0.9);
+        }
+        .disabled { opacity: 0.5; cursor: not-allowed; }
+        .maxed { border-color: #22c55e !important; cursor: default; }
+        
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+        
+        .btn-menu {
+            transition: transform 0.1s, background-color 0.2s;
+        }
+        .btn-menu:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="ltr">
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="ui-overlay w-full pr-10 flex justify-between items-start">
+        <div>
+            <div class="text-3xl font-black italic tracking-tighter text-sky-400 drop-shadow-lg" id="gameTitle">DEEP SEEK</div>
+            <div id="depthUI" class="text-xl font-mono text-emerald-300">Depth: 0m</div>
+            <div id="scoreUI" class="text-xl font-mono text-yellow-300">Loot: $0</div>
+            <div id="shieldUI" class="text-sm text-emerald-400 font-bold mt-1 opacity-0 transition-opacity">Shields: 0</div>
+            <div class="w-48 h-4 bg-slate-900/80 rounded-full mt-2 border border-slate-600 overflow-hidden relative">
+                <div id="oxygenBar" class="h-full bg-sky-400 transition-all duration-300 shadow-[0_0_10px_rgba(56,189,248,0.8)]" style="width: 100%"></div>
+            </div>
+            <div id="oxygenLabel" class="text-xs uppercase mt-1 opacity-70 tracking-widest">OXYGEN</div>
+        </div>
+        <div id="bankUI" class="text-right text-sky-200 font-mono text-lg bg-slate-900/50 p-2 rounded-lg border border-slate-700">
+            Bank: $0
+        </div>
+    </div>
+
+    <div id="mainMenuModal" class="modal">
+        <h1 class="text-5xl font-black mb-2 text-sky-400 uppercase italic tracking-tighter drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]">Deep Seek</h1>
+        <p id="menuSubtitle" class="mb-6 opacity-70 text-sm tracking-wide">SURVIVE. LOOT. UPGRADE.</p>
+        
+        <div class="space-y-3">
+            <button onclick="startGame()" id="btnStart" class="btn-menu w-full bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white font-black py-4 rounded-xl shadow-lg shadow-sky-900/50 uppercase text-xl tracking-wider">
+                DIVE
+            </button>
+            
+            <div class="grid grid-cols-3 gap-3">
+                <button onclick="openShop()" id="btnShop" class="btn-menu bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold py-3 rounded-xl border border-slate-700 text-sm">
+                    SHOP
+                </button>
+                <button onclick="openStory()" id="btnStory" class="btn-menu bg-slate-800 hover:bg-slate-700 text-yellow-400 font-bold py-3 rounded-xl border border-slate-700 text-sm">
+                    STORY
+                </button>
+                <button onclick="openSettings()" id="btnSettings" class="btn-menu bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl border border-slate-700 text-sm">
+                    CONFIG
+                </button>
+            </div>
+        </div>
+        
+        <div class="mt-6 flex justify-center gap-4 text-xs opacity-50">
+            <span>v2.1.0</span>
+            <span id="txtMobileRotate">You are the last hope for Humanity.</span>
+        </div>
+    </div>
+
+    <div id="shopModal" class="modal hidden">
+        <div class="flex justify-between items-center mb-4">
+            <h2 id="shopTitle" class="text-3xl font-black text-emerald-400 uppercase italic">Supply Depot</h2>
+            <button onclick="showMainMenu()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        
+        <div id="shopContainer" class="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-sky-900 scrollbar-track-transparent">
+        </div>
+
+        <button onclick="showMainMenu()" id="btnBackShop" class="btn-menu w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl uppercase">
+            Back to Menu
+        </button>
+    </div>
+
+    <div id="storyModal" class="modal hidden">
+        <h2 id="storyTitle" class="text-3xl font-black mb-4 text-yellow-400 uppercase italic">Mission Brief</h2>
+        <div id="storyText" class="text-left rtl:text-right text-sm leading-relaxed text-slate-300 mb-6 bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+        </div>
+        <button onclick="showMainMenu()" id="btnBackStory" class="btn-menu w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl uppercase">
+            Back to Menu
+        </button>
+    </div>
+
+    <div id="settingsModal" class="modal hidden">
+        <h2 id="settingsTitle" class="text-3xl font-black mb-6 text-slate-300 uppercase italic">System Config</h2>
+        
+        <div class="space-y-6 text-left">
+            <div>
+                <label id="lblLang" class="block text-xs font-bold text-sky-400 uppercase mb-2">Language / اللغة</label>
+                <div class="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                    <button onclick="setLang('en')" class="flex-1 py-2 rounded text-sm font-bold transition-colors" id="langEn">ENGLISH</button>
+                    <button onclick="setLang('ar')" class="flex-1 py-2 rounded text-sm font-bold transition-colors" id="langAr">العربية</button>
+                </div>
+            </div>
+
+            <div>
+                <label id="lblVolume" class="block text-xs font-bold text-sky-400 uppercase mb-2">Sound Volume</label>
+                <input type="range" id="volSlider" min="0" max="100" value="50" oninput="updateSettings()">
+            </div>
+
+            <div>
+                <label id="lblGraphics" class="block text-xs font-bold text-sky-400 uppercase mb-2">Graphics</label>
+                <div class="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                    <button onclick="setGraphics('low')" id="gfxLow" class="flex-1 py-2 rounded text-xs font-bold transition-colors text-slate-400 hover:text-white">LOW</button>
+                    <button onclick="setGraphics('high')" id="gfxHigh" class="flex-1 py-2 rounded text-xs font-bold transition-colors text-sky-400 bg-slate-800 shadow">HIGH</button>
+                </div>
+            </div>
+
+            <div>
+                <label id="lblDiff" class="block text-xs font-bold text-sky-400 uppercase mb-2">Difficulty</label>
+                <div class="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                    <button onclick="setDiff('easy')" id="diffEasy" class="flex-1 py-2 rounded text-xs font-bold transition-colors text-emerald-400">EASY</button>
+                    <button onclick="setDiff('normal')" id="diffNormal" class="flex-1 py-2 rounded text-xs font-bold transition-colors text-yellow-400 bg-slate-800 shadow">NORMAL</button>
+                    <button onclick="setDiff('hard')" id="diffHard" class="flex-1 py-2 rounded text-xs font-bold transition-colors text-red-400">HARD</button>
+                </div>
+            </div>
+        </div>
+
+        <button onclick="showMainMenu()" id="btnBackSettings" class="btn-menu w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl mt-6 uppercase">
+            Save & Exit
+        </button>
+    </div>
+
+    <div id="gameOverModal" class="modal hidden">
+        <h2 id="gameOverTitle" class="text-4xl font-black mb-2 text-red-500 uppercase glitch-text">HULL BREACH</h2>
+        <p id="finalStats" class="mb-6 text-lg">Depth: 0m | Loot: $0</p>
+        <div class="flex gap-3">
+            <button onclick="showMainMenu()" id="btnMenu" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl">MENU</button>
+            <button onclick="startGame()" id="btnRetry" class="flex-[2] bg-white hover:bg-gray-200 text-slate-900 font-black py-3 rounded-xl uppercase">RETRY</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const els = {
+        mainMenu: document.getElementById('mainMenuModal'),
+        shop: document.getElementById('shopModal'),
+        settings: document.getElementById('settingsModal'),
+        story: document.getElementById('storyModal'),
+        gameOver: document.getElementById('gameOverModal'),
+        oxygenBar: document.getElementById('oxygenBar'),
+        depth: document.getElementById('depthUI'),
+        score: document.getElementById('scoreUI'),
+        bank: document.getElementById('bankUI'),
+        shield: document.getElementById('shieldUI'),
+        finalStats: document.getElementById('finalStats'),
+        shopContainer: document.getElementById('shopContainer'),
+        storyText: document.getElementById('storyText'),
+        body: document.body
+    };
+
+    const i18n = {
+        en: {
+            title: "DEEP SEEK",
+            subtitle: "SURVIVE. LOOT. UPGRADE.",
+            start: "DIVE",
+            shop: "SHOP",
+            settings: "CONFIG",
+            story: "STORY",
+            depth: "Depth",
+            loot: "Loot",
+            bank: "Bank",
+            shields: "Shields",
+            oxygen: "OXYGEN",
+            hullBreach: "HULL BREACH",
+            menu: "MENU",
+            retry: "RETRY",
+            back: "BACK",
+            shopTitle: "SUPPLY DEPOT",
+            settingsTitle: "SYSTEM CONFIG",
+            storyTitle: "MISSION BRIEF",
+            lblLang: "LANGUAGE / اللغة",
+            lblVol: "SOUND VOLUME",
+            lblGfx: "GRAPHICS",
+            lblDiff: "DIFFICULTY",
+            low: "LOW",
+            high: "HIGH",
+            easy: "EASY",
+            normal: "NORMAL",
+            hard: "HARD",
+            rotate: "You are the last hope for Humanity.",
+            storyText: "The year is 2142. The surface is cooked. Humanity's last hope lies in the Deep Seek program. You are a 'Diver' pilot, tasked with salvaging ancient tech from the crush depth. High risk, high reward. Don't fumble the bag.",
+            items: {
+                hull: { name: "Midas Hull", desc: "Loot value +25%" },
+                engine: { name: "Turbo Prop", desc: "Speed +20%" },
+                tank: { name: "Deep Oxygen", desc: "Air lasts +15%" },
+                shield: { name: "Force Field", desc: "Absorb 1 Hit" }
+            }
+        },
+        ar: {
+            title: "ديب سيك",
+            subtitle: "أنجُ. إجمع. طور.",
+            start: "غوص",
+            shop: "المتجر",
+            settings: "الإعدادات",
+            story: "القصة",
+            depth: "العمق",
+            loot: "الغنائم",
+            bank: "البنك",
+            shields: "الدروع",
+            oxygen: "الأكسجين",
+            hullBreach: "تحطم الهيكل",
+            menu: "القائمة",
+            retry: "أعد المحاولة",
+            back: "رجوع",
+            shopTitle: "مستودع المؤن",
+            settingsTitle: "إعدادات النظام",
+            storyTitle: "ملخص المهمة",
+            lblLang: "LANGUAGE / اللغة",
+            lblVol: "مستوى الصوت",
+            lblGfx: "الرسوميات",
+            lblDiff: "الصعوبة",
+            low: "منخفض",
+            high: "عالي",
+            easy: "سهل",
+            normal: "عادي",
+            hard: "صعب",
+            rotate: "قم بتدوير الهاتف لتجربة أفضل",
+            storyText: "العام 2142. سطح الأرض انتهى. أمل البشرية الأخير يكمن في برنامج ديب سيك. أنت طيار 'غواص'، مكلف باستعادة التكنولوجيا القديمة من الأعماق السحيقة. مخاطر عالية، ومكافآت أعلى. لا تضيع الفرصة.",
+            items: {
+                hull: { name: "هيكل ميداس", desc: "قيمة الغنائم +25%" },
+                engine: { name: "محرك تيربو", desc: "السرعة +20%" },
+                tank: { name: "خزان عميق", desc: "الهواء يدوم +15%" },
+                shield: { name: "حقل طاقة", desc: "امتصاص ضربة واحدة" }
+            }
+        }
+    };
+
+    let state = {
+        lang: 'en',
+        vol: 0.5,
+        gfx: 'high',
+        diff: 'normal',
+        coins: 0,
+        upgrades: { hull: 0, engine: 0, tank: 0, shield: 0 }
+    };
+
+    const MAX_LEVEL = 3;
+    const PLAYER_SIZE = 40;
+    
+    let gameActive = false;
+    let score = 0;
+    let depth = 0;
+    let oxygen = 100;
+    let player = { x: 0, y: 0, vx: 0, vy: 0 };
+    let obstacles = [];
+    let items = [];
+    let particles = [];
+    let frameCount = 0;
+    let shakeIntensity = 0;
+    let currentShields = 0;
+    let iframeTimer = 0;
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const now = audioCtx.currentTime;
+        
+        const vol = state.vol;
+        if(vol <= 0.01) return;
+
+        switch(type) {
+            case 'collect':
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.exponentialRampToValueAtTime(1760, now + 0.1);
+                gain.gain.setValueAtTime(0.2 * vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                osc.start(now);
+                osc.stop(now + 0.15);
+                break;
+            case 'buy':
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.2);
+                gain.gain.setValueAtTime(0.2 * vol, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.2);
+                osc.start(now);
+                osc.stop(now + 0.2);
+                break;
+            case 'hit':
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.exponentialRampToValueAtTime(10, now + 0.4);
+                gain.gain.setValueAtTime(0.5 * vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now);
+                osc.stop(now + 0.4);
+                
+                const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.2, audioCtx.sampleRate);
+                const data = noiseBuf.getChannelData(0);
+                for(let i=0; i<data.length; i++) data[i] = (Math.random()*2-1);
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuf;
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.4 * vol, now);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                noise.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+                break;
+            case 'shieldPop':
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.linearRampToValueAtTime(800, now + 0.1);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.4);
+                gain.gain.setValueAtTime(0.3 * vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now);
+                osc.stop(now + 0.4);
+                break;
+            case 'die':
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.exponentialRampToValueAtTime(10, now + 1.5);
+                gain.gain.setValueAtTime(0.6 * vol, now);
+                gain.gain.linearRampToValueAtTime(0, now + 1.5);
+                osc.start(now);
+                osc.stop(now + 1.5);
+                break;
+        }
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+    }
+
+    let keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    let touchStart = { x: 0, y: 0 };
+    window.addEventListener('touchstart', e => {
+        const t = e.touches[0];
+        touchStart = { x: t.clientX, y: t.clientY };
+    }, {passive: false});
+
+    window.addEventListener('touchmove', e => {
+        if (!gameActive) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        
+        let dx = t.clientX - touchStart.x;
+        let dy = t.clientY - touchStart.y;
+        
+        const isPortrait = window.innerWidth < window.innerHeight && window.innerWidth < 900;
+        
+        if (isPortrait) {
+             player.vx = dy * 0.15;
+             player.vy = -dx * 0.15;
+        } else {
+            player.vx = dx * 0.15;
+            player.vy = dy * 0.15;
+        }
+        
+        touchStart = { x: t.clientX, y: t.clientY };
+    }, {passive: false});
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        if (!gameActive) {
+            player.x = canvas.width / 2 - PLAYER_SIZE/2;
+            player.y = 200;
+        }
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function startGame() {
+        gameActive = true;
+        score = 0;
+        depth = 0;
+        oxygen = 100;
+        currentShields = state.upgrades.shield;
+        iframeTimer = 0;
+        shakeIntensity = 0;
+        obstacles = [];
+        items = [];
+        particles = [];
+        frameCount = 0;
+        
+        player.x = canvas.width/2;
+        player.y = 200;
+        player.vx = 0;
+        player.vy = 0;
+
+        els.mainMenu.classList.add('hidden');
+        els.gameOver.classList.add('hidden');
+        els.shield.style.opacity = currentShields > 0 ? '1' : '0.3';
+        els.shield.innerText = `${getText('shields')}: ${currentShields}`;
+        
+        playSound('buy');
+    }
+
+    function spawnEntities() {
+        frameCount++;
+        
+        let spawnRateObs = 60;
+        let spawnRateItem = 80;
+        let speedMod = 1;
+        
+        if (state.diff === 'easy') { spawnRateObs = 80; speedMod = 0.8; }
+        if (state.diff === 'hard') { spawnRateObs = 40; speedMod = 1.2; }
+
+        if (frameCount % spawnRateObs === 0) {
+            const size = 60 + Math.random() * 100;
+            obstacles.push({
+                x: Math.random() * (canvas.width - size),
+                y: canvas.height + 100,
+                width: size,
+                height: size,
+                rot: Math.random() * Math.PI
+            });
+        }
+
+        if (frameCount % spawnRateItem === 0) {
+            const isOxygen = Math.random() > 0.8;
+            const size = 30;
+            const x = Math.random() * (canvas.width - 50) + 25;
+            const y = canvas.height + 100;
+            
+            const safe = obstacles.every(o => Math.hypot(x - (o.x+o.width/2), y - (o.y+o.height/2)) > (o.width/2 + size + 20));
+            
+            if (safe) {
+                items.push({ x, y, size, type: isOxygen ? 'oxygen' : 'gold', val: Math.floor(depth/10)+10 });
+            }
+        }
+    }
+
+    function update() {
+        if (!gameActive) return;
+
+        if (shakeIntensity > 0) shakeIntensity *= 0.9;
+        if (shakeIntensity < 0.5) shakeIntensity = 0;
+        if (iframeTimer > 0) iframeTimer--;
+
+        const speedBase = 0.8 + (state.upgrades.engine * 0.2);
+        if (keys['ArrowLeft'] || keys['KeyA']) player.vx -= speedBase;
+        if (keys['ArrowRight'] || keys['KeyD']) player.vx += speedBase;
+        if (keys['ArrowUp'] || keys['KeyW']) player.vy -= speedBase;
+        if (keys['ArrowDown'] || keys['KeyS']) player.vy += speedBase;
+
+        player.vx *= 0.95;
+        player.vy *= 0.95;
+        player.x += player.vx;
+        player.y += player.vy;
+
+        if (player.x < 0) player.x = 0;
+        if (player.x > canvas.width - PLAYER_SIZE) player.x = canvas.width - PLAYER_SIZE;
+        if (player.y < 0) player.y = 0;
+        if (player.y > canvas.height - PLAYER_SIZE) player.y = canvas.height - PLAYER_SIZE;
+
+        let gameSpeed = (2 + (depth * 0.0005));
+        if (state.diff === 'easy') gameSpeed *= 0.8;
+        if (state.diff === 'hard') gameSpeed *= 1.2;
+        
+        depth += gameSpeed / 10;
+        
+        let o2decay = 0.08;
+        if (state.diff === 'easy') o2decay = 0.05;
+        if (state.diff === 'hard') o2decay = 0.12;
+        o2decay *= Math.pow(0.85, state.upgrades.tank);
+        
+        oxygen -= o2decay;
+
+        updateEntities(gameSpeed);
+
+        if (oxygen <= 0) die();
+        
+        spawnEntities();
+        updateUI();
+    }
+
+    function updateEntities(speed) {
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let o = obstacles[i];
+            o.y -= speed;
+            
+            if (iframeTimer === 0 &&
+                player.x < o.x + o.width &&
+                player.x + PLAYER_SIZE > o.x &&
+                player.y < o.y + o.height &&
+                player.y + PLAYER_SIZE > o.y) {
+                
+                if (currentShields > 0) {
+                    currentShields--;
+                    iframeTimer = 90;
+                    shakeIntensity = 10;
+                    playSound('shieldPop');
+                    createParticles(player.x, player.y, '#10b981', 15);
+                    els.shield.innerText = `${getText('shields')}: ${currentShields}`;
+                    if (currentShields === 0) els.shield.style.opacity = '0.3';
+                } else {
+                    die();
+                }
+            }
+            if (o.y < -200) obstacles.splice(i, 1);
+        }
+
+        for (let i = items.length - 1; i >= 0; i--) {
+            let it = items[i];
+            it.y -= speed;
+            
+            let dist = Math.hypot((player.x+20)-it.x, (player.y+20)-it.y);
+            if (dist < 35) {
+                if (it.type === 'gold') {
+                    let bonus = 1 + (state.upgrades.hull * 0.25);
+                    score += Math.floor(it.val * bonus);
+                    playSound('collect');
+                    createParticles(it.x, it.y, '#fbbf24', 5);
+                } else {
+                    oxygen = Math.min(100, oxygen + 25);
+                    playSound('collect');
+                    createParticles(it.x, it.y, '#38bdf8', 8);
+                }
+                items.splice(i, 1);
+            }
+            if (it.y < -100) items.splice(i, 1);
+        }
+        
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.02;
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+    }
+
+    function createParticles(x, y, color, count) {
+        if (state.gfx === 'low') count = Math.ceil(count / 2);
+        for(let i=0; i<count; i++) {
+            particles.push({
+                x, y,
+                vx: (Math.random()-0.5) * 10,
+                vy: (Math.random()-0.5) * 10,
+                life: 1.0,
+                color,
+                size: Math.random() * 4 + 2
+            });
+        }
+    }
+
+    function die() {
+        if (!gameActive) return;
+        gameActive = false;
+        shakeIntensity = 30;
+        playSound('die');
+        createParticles(player.x, player.y, '#ef4444', 30);
+        createParticles(player.x, player.y, '#facc15', 20);
+        
+        state.coins += score;
+        
+        setTimeout(() => {
+            els.finalStats.innerText = `${getText('depth')}: ${Math.floor(depth)}m | ${getText('loot')}: $${score}`;
+            els.bank.innerText = `${getText('bank')}: $${state.coins}`;
+            els.gameOver.classList.remove('hidden');
+        }, 1000);
+    }
+
+    function updateUI() {
+        els.oxygenBar.style.width = `${oxygen}%`;
+        els.oxygenBar.style.backgroundColor = oxygen < 30 ? '#ef4444' : '#38bdf8';
+        els.depth.innerText = `${getText('depth')}: ${Math.floor(depth)}m`;
+        els.score.innerText = `${getText('loot')}: $${score}`;
+        els.shield.innerText = `${getText('shields')}: ${currentShields}`;
+    }
+
+    function draw() {
+        ctx.save();
+        if (shakeIntensity > 0) {
+            ctx.translate((Math.random()-0.5)*shakeIntensity, (Math.random()-0.5)*shakeIntensity);
+        }
+
+        let dark = Math.max(0, 15 - (depth/1000));
+        ctx.fillStyle = `rgb(${dark}, ${dark+5}, ${dark+15})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (state.gfx === 'high') {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+            for(let i=0; i<20; i++) {
+                let x = (Math.sin(frameCount*0.002 + i) * 100) + (canvas.width * (i/20));
+                let y = (frameCount * 1.5 + (i*150)) % canvas.height;
+                ctx.beginPath();
+                ctx.arc(x, canvas.height - y, 2 + (i%3), 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+
+        ctx.fillStyle = "#334155";
+        ctx.strokeStyle = "#1e293b";
+        ctx.lineWidth = 4;
+        obstacles.forEach(o => {
+            ctx.save();
+            ctx.translate(o.x + o.width/2, o.y + o.height/2);
+            ctx.rotate(o.rot);
+            ctx.beginPath();
+            ctx.roundRect(-o.width/2, -o.height/2, o.width, o.height, 15);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        });
+
+        items.forEach(it => {
+            ctx.beginPath();
+            if (it.type === 'gold') {
+                ctx.fillStyle = "#fbbf24";
+                ctx.arc(it.x, it.y, 14, 0, Math.PI*2);
+            } else {
+                ctx.fillStyle = "#38bdf8";
+                ctx.moveTo(it.x, it.y - 15);
+                ctx.lineTo(it.x + 12, it.y + 10);
+                ctx.lineTo(it.x - 12, it.y + 10);
+                ctx.closePath();
+            }
+            ctx.fill();
+            if (state.gfx === 'high') {
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = it.type === 'gold' ? '#fbbf24' : '#38bdf8';
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            } else {
+                ctx.stroke();
+            }
+        });
+
+        if (gameActive || frameCount % 60 < 30) {
+            ctx.save();
+            ctx.translate(player.x + PLAYER_SIZE/2, player.y + PLAYER_SIZE/2);
+            ctx.rotate(player.vx * 0.04);
+            
+            if (iframeTimer > 0 && Math.floor(frameCount / 4) % 2 === 0) ctx.globalAlpha = 0.5;
+            
+            ctx.fillStyle = state.upgrades.hull === MAX_LEVEL ? "#eab308" : "#facc15";
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 25, 18, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.strokeStyle = "#854d0e";
+            ctx.stroke();
+            
+            ctx.fillStyle = "#0ea5e9";
+            ctx.beginPath();
+            ctx.arc(12, -2, 9, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.fillStyle = "#475569";
+            let pSpeed = 0.2 + (state.upgrades.engine * 0.1);
+            let pSize = Math.sin(frameCount * pSpeed) * 12;
+            ctx.fillRect(-32, -pSize/2, 6, pSize);
+            
+            if (currentShields > 0) {
+                ctx.strokeStyle = `rgba(16, 185, 129, ${0.4 + Math.sin(frameCount*0.1)*0.2})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0,0, 35, 0, Math.PI*2);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+            ctx.globalAlpha = 1;
+        }
+
+        particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        if (state.gfx === 'high') {
+            const grad = ctx.createRadialGradient(player.x+20, player.y+20, 40, player.x+20, player.y+20, 400);
+            grad.addColorStop(0, 'rgba(56, 189, 248, 0.05)');
+            grad.addColorStop(1, 'rgba(0,0,0,0.6)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0,0, canvas.width, canvas.height);
+        }
+
+        ctx.restore();
+        requestAnimationFrame(loop);
+    }
+    
+    function loop() {
+        if(gameActive) update();
+        draw();
+    }
+
+    function getText(key) {
+        return i18n[state.lang][key] || key;
+    }
+
+    function applyLang() {
+        const txt = i18n[state.lang];
+        const isAr = state.lang === 'ar';
+        
+        els.body.className = isAr ? 'rtl' : 'ltr';
+        
+        document.getElementById('btnStart').innerText = txt.start;
+        document.getElementById('btnShop').innerText = txt.shop;
+        document.getElementById('btnSettings').innerText = txt.settings;
+        document.getElementById('btnStory').innerText = txt.story;
+        document.getElementById('btnMenu').innerText = txt.menu;
+        document.getElementById('btnRetry').innerText = txt.retry;
+        document.getElementById('btnBackShop').innerText = txt.back;
+        document.getElementById('btnBackSettings').innerText = txt.back;
+        document.getElementById('btnBackStory').innerText = txt.back;
+        
+        document.getElementById('gameTitle').innerText = txt.title;
+        document.getElementById('menuSubtitle').innerText = txt.subtitle;
+        document.getElementById('shopTitle').innerText = txt.shopTitle;
+        document.getElementById('settingsTitle').innerText = txt.settingsTitle;
+        document.getElementById('storyTitle').innerText = txt.storyTitle;
+        document.getElementById('gameOverTitle').innerText = txt.hullBreach;
+        document.getElementById('oxygenLabel').innerText = txt.oxygen;
+        document.getElementById('txtMobileRotate').innerText = txt.rotate;
+        document.getElementById('storyText').innerText = txt.storyText;
+        
+        document.getElementById('lblLang').innerText = txt.lblLang;
+        document.getElementById('lblVolume').innerText = txt.lblVol;
+        document.getElementById('lblGraphics').innerText = txt.lblGfx;
+        document.getElementById('lblDiff').innerText = txt.lblDiff;
+        document.getElementById('gfxLow').innerText = txt.low;
+        document.getElementById('gfxHigh').innerText = txt.high;
+        document.getElementById('diffEasy').innerText = txt.easy;
+        document.getElementById('diffNormal').innerText = txt.normal;
+        document.getElementById('diffHard').innerText = txt.hard;
+        
+        els.depth.innerText = `${txt.depth}: ${Math.floor(depth)}m`;
+        els.score.innerText = `${txt.loot}: $${score}`;
+        els.bank.innerText = `${txt.bank}: $${state.coins}`;
+        els.shield.innerText = `${txt.shields}: ${currentShields}`;
+        
+        renderShop();
+        
+        document.getElementById('langEn').className = `flex-1 py-2 rounded text-sm font-bold transition-colors ${!isAr ? 'bg-slate-800 text-sky-400 shadow' : 'text-slate-400'}`;
+        document.getElementById('langAr').className = `flex-1 py-2 rounded text-sm font-bold transition-colors ${isAr ? 'bg-slate-800 text-sky-400 shadow' : 'text-slate-400'}`;
+    }
+
+    function setLang(l) {
+        state.lang = l;
+        applyLang();
+    }
+
+    function openSettings() {
+        els.mainMenu.classList.add('hidden');
+        els.settings.classList.remove('hidden');
+        updateSettingsUI();
+    }
+    
+    function updateSettingsUI() {
+        document.getElementById('volSlider').value = state.vol * 100;
+        
+        const actClass = 'text-sky-400 bg-slate-800 shadow';
+        const inactClass = 'text-slate-400 hover:text-white';
+        
+        document.getElementById('gfxLow').className = `flex-1 py-2 rounded text-xs font-bold transition-colors ${state.gfx === 'low' ? actClass : inactClass}`;
+        document.getElementById('gfxHigh').className = `flex-1 py-2 rounded text-xs font-bold transition-colors ${state.gfx === 'high' ? actClass : inactClass}`;
+        
+        const diffAct = 'bg-slate-800 shadow scale-105';
+        const diffInact = 'opacity-60 hover:opacity-100';
+        document.getElementById('diffEasy').className = `flex-1 py-2 rounded text-xs font-bold transition-all text-emerald-400 ${state.diff === 'easy' ? diffAct : diffInact}`;
+        document.getElementById('diffNormal').className = `flex-1 py-2 rounded text-xs font-bold transition-all text-yellow-400 ${state.diff === 'normal' ? diffAct : diffInact}`;
+        document.getElementById('diffHard').className = `flex-1 py-2 rounded text-xs font-bold transition-all text-red-400 ${state.diff === 'hard' ? diffAct : diffInact}`;
+    }
+
+    function updateSettings() {
+        state.vol = document.getElementById('volSlider').value / 100;
+    }
+    
+    function setGraphics(g) { state.gfx = g; updateSettingsUI(); }
+    function setDiff(d) { state.diff = d; updateSettingsUI(); }
+
+    function showMainMenu() {
+        els.shop.classList.add('hidden');
+        els.settings.classList.add('hidden');
+        els.story.classList.add('hidden');
+        els.gameOver.classList.add('hidden');
+        els.mainMenu.classList.remove('hidden');
+        gameActive = false;
+        applyLang();
+    }
+
+    function openShop() {
+        els.mainMenu.classList.add('hidden');
+        els.shop.classList.remove('hidden');
+        renderShop();
+    }
+
+    function openStory() {
+        els.mainMenu.classList.add('hidden');
+        els.story.classList.remove('hidden');
+    }
+
+    function renderShop() {
+        const txt = i18n[state.lang].items;
+        const items = [
+            { id: 'hull', name: txt.hull.name, desc: txt.hull.desc, costBase: 100, costMult: 2.2 },
+            { id: 'engine', name: txt.engine.name, desc: txt.engine.desc, costBase: 150, costMult: 2.2 },
+            { id: 'tank', name: txt.tank.name, desc: txt.tank.desc, costBase: 200, costMult: 2.2 },
+            { id: 'shield', name: txt.shield.name, desc: txt.shield.desc, costBase: 300, costMult: 2.2 }
+        ];
+
+        els.shopContainer.innerHTML = items.map(item => {
+            const level = state.upgrades[item.id];
+            const isMaxed = level >= MAX_LEVEL;
+            const cost = Math.floor(item.costBase * Math.pow(item.costMult, level));
+            const canAfford = state.coins >= cost;
+
+            return `
+                <div class="shop-item p-3 rounded-xl flex justify-between items-center ${isMaxed ? 'maxed' : (canAfford ? '' : 'disabled')}" 
+                     onclick="buy('${item.id}', ${cost})">
+                    <div class="text-left rtl:text-right">
+                        <div class="font-bold ${isMaxed ? 'text-emerald-400' : 'text-sky-300'} text-sm">
+                            ${item.name} 
+                            <span class="text-white opacity-50 mx-1 text-xs">Lvl ${level}/${MAX_LEVEL}</span>
+                        </div>
+                        <div class="text-xs opacity-60">${item.desc}</div>
+                    </div>
+                    <div class="${isMaxed ? 'bg-emerald-900 text-emerald-200' : 'bg-sky-900 text-sky-200'} px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest">
+                        ${isMaxed ? 'MAX' : '$' + cost}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    window.buy = (id, cost) => {
+        if (state.upgrades[id] < MAX_LEVEL && state.coins >= cost) {
+            state.coins -= cost;
+            state.upgrades[id]++;
+            playSound('buy');
+            els.bank.innerText = `${getText('bank')}: $${state.coins}`;
+            renderShop();
+        }
+    };
+
+    window.onload = () => {
+        applyLang();
+        draw();
+    };
+
+</script>
+</body>
+</html>
