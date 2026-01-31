@@ -16,27 +16,18 @@
             user-select: none;
             -webkit-user-select: none;
         }
+        /* Make the game container cover the full viewport so mobile has no letterboxing */
+        html, body { height: 100%; }
         #game-container {
-            position: relative;
+            position: fixed;
+            inset: 0;
             width: 100vw;
             height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
             overflow: hidden;
-        }
-        @media screen and (orientation: portrait) and (max-width: 900px) {
-            #game-container {
-                transform: rotate(90deg);
-                transform-origin: center;
-                width: 100vh;
-                height: 100vw;
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                margin-left: -50vh;
-                margin-top: -50vw;
-            }
+            background: transparent;
         }
         canvas {
             display: block;
@@ -132,15 +123,16 @@
             position: absolute;
             bottom: 40px;
             left: 40px;
-            width: 120px;
-            height: 120px;
+            width: 140px;
+            height: 140px;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            border: 2px solid rgba(255, 255, 255, 0.08);
             z-index: 60;
             pointer-events: auto;
             touch-action: none;
-            display: none; 
+            display: none;
+            -webkit-tap-highlight-color: transparent;
         }
         #joystickKnob {
             position: absolute;
@@ -156,6 +148,20 @@
         }
         @media (hover: none) and (pointer: coarse) {
             #joystickZone { display: block; }
+            #btnShootMobile { display: flex; }
+        }
+        @media screen and (orientation: portrait) and (max-width: 900px) {
+            /* Rotate the game container so the game is landscape on portrait phones */
+            #game-container {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                width: 100vh;
+                height: 100vw;
+                transform: translate(-50%, -50%) rotate(90deg);
+                transform-origin: center center;
+            }
+            canvas { width: 100%; height: 100%; }
         }
         .online-count {
             position: absolute;
@@ -347,12 +353,27 @@
     window.addEventListener('keyup', e => keys[e.code] = false);
 
     // Joystick Logic
+    // Convert screen (clientX,clientY) to game canvas coordinates, accounting for mobile portrait rotation
+    function screenToGame(sx, sy) {
+        const rotated = isMobileDevice() && window.innerWidth < window.innerHeight;
+        if (!rotated) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: sx - rect.left, y: sy - rect.top };
+        }
+        // When rotated 90deg CW for portrait phones, map screen coords into rotated canvas space
+        const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+        const tx = sx - cx, ty = sy - cy;
+        const xPrime = ty; // rotated -90deg
+        const yPrime = -tx;
+        return { x: xPrime + canvas.width/2, y: yPrime + canvas.height/2 };
+    }
     els.joystickZone.addEventListener('touchstart', e => {
         e.preventDefault();
         const t = e.touches[0];
+        const g = screenToGame(t.clientX, t.clientY);
         joystickData.active = true;
-        joystickData.originX = t.clientX;
-        joystickData.originY = t.clientY;
+        joystickData.originX = g.x;
+        joystickData.originY = g.y;
         joystickData.x = 0;
         joystickData.y = 0;
         els.joystickKnob.style.transform = `translate(-50%, -50%)`;
@@ -362,17 +383,29 @@
         if (!joystickData.active) return;
         e.preventDefault();
         const t = e.touches[0];
-        let dx = t.clientX - joystickData.originX;
-        let dy = t.clientY - joystickData.originY;
-        const dist = Math.hypot(dx, dy);
+        // map to game coordinates for control values
+        const g = screenToGame(t.clientX, t.clientY);
+        let dx = g.x - joystickData.originX;
+        let dy = g.y - joystickData.originY;
         const maxDist = 35;
+        const dist = Math.hypot(dx, dy);
         if (dist > maxDist) {
             dx = (dx / dist) * maxDist;
             dy = (dy / dist) * maxDist;
         }
         joystickData.x = dx / maxDist;
         joystickData.y = dy / maxDist;
-        els.joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+        // For visual knob movement use screen-space offsets so the knob follows the finger visually
+        const rect = els.joystickZone.getBoundingClientRect();
+        let screenOffsetX = t.clientX - (rect.left + rect.width/2);
+        let screenOffsetY = t.clientY - (rect.top + rect.height/2);
+        const sdist = Math.hypot(screenOffsetX, screenOffsetY);
+        if (sdist > maxDist) {
+            screenOffsetX = (screenOffsetX / sdist) * maxDist;
+            screenOffsetY = (screenOffsetY / sdist) * maxDist;
+        }
+        els.joystickKnob.style.transform = `translate(calc(-50% + ${screenOffsetX}px), calc(-50% + ${screenOffsetY}px))`;
     }, {passive: false});
 
     els.joystickZone.addEventListener('touchend', e => {
@@ -400,7 +433,14 @@
         obstacles = []; items = []; particles = []; enemies = []; projectiles = [];
         player.x = canvas.width/2; player.y = 200;
         els.mainMenu.classList.add('hidden'); els.gameOver.classList.add('hidden');
-        if('ontouchstart' in window) els.btnShoot.classList.remove('hidden');
+        // only show mobile shoot button when device is small/touch
+        if (isMobileDevice()) {
+            els.btnShoot.classList.remove('hidden');
+            // try to enter fullscreen on mobile (user gesture - start button)
+            try { if (document.fullscreenEnabled) document.documentElement.requestFullscreen().catch(()=>{}); } catch(e){}
+        } else {
+            els.btnShoot.classList.add('hidden');
+        }
         playSound('buy');
     }
 
@@ -408,7 +448,14 @@
         frameCount++;
         let spawnRateObs = state.diff === 'easy' ? 80 : 60;
         let spawnRateEnemy = state.diff === 'easy' ? 200 : 150;
-        
+        const mobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth < 900;
+
+        // Reduce spawn frequency on mobile for performance
+        if (mobile) {
+            spawnRateObs = Math.ceil(spawnRateObs * 1.6);
+            spawnRateEnemy = Math.ceil(spawnRateEnemy * 1.8);
+        }
+
         if (frameCount % spawnRateObs === 0) {
             const size = 60 + Math.random() * 80;
             obstacles.push({ x: Math.random() * (canvas.width - size), y: canvas.height + 100, width: size, height: size, rot: Math.random()*6, type: Math.floor(Math.random()*3) });
@@ -418,7 +465,9 @@
             if (isBoss) enemies.push({ x: canvas.width/2 - 60, y: canvas.height + 150, width: 140, height: 100, hp: 8, type: 'boss', speed: 1.2 });
             else enemies.push({ x: Math.random() * (canvas.width - 50), y: canvas.height + 100, width: 50, height: 50, hp: 1, type: 'basic', speed: 2.5 });
         }
-        if (frameCount % 80 === 0) {
+        // items spawn less frequently on mobile
+        const itemSpawn = mobile ? 120 : 80;
+        if (frameCount % itemSpawn === 0) {
             items.push({ x: Math.random() * (canvas.width - 50) + 25, y: canvas.height + 100, size: 30, type: Math.random() > 0.8 ? 'oxygen' : 'gold', val: Math.floor(depth/10)+10 });
         }
     }
@@ -429,7 +478,10 @@
         if (iframeTimer > 0) iframeTimer--;
         if (shotCooldown > 0) shotCooldown--;
 
-        const speedBase = 0.9 + (state.upgrades.engine * 0.25);
+        const mobile = isMobileDevice();
+        let speedBase = 0.9 + (state.upgrades.engine * 0.25);
+        // reduce movement responsiveness on mobile for smoother control
+        if (mobile) speedBase *= 0.65;
         
         // Keyboard Input
         if (keys['ArrowLeft'] || keys['KeyA']) player.vx -= speedBase;
@@ -439,30 +491,11 @@
 
         // Joystick Input (Rotation corrected for portrait mobile)
         if (joystickData.active) {
-            const isPortrait = window.innerWidth < window.innerHeight && window.innerWidth < 900;
-            let joyX = joystickData.x;
-            let joyY = joystickData.y;
-            
-            if (isPortrait) {
-                // If phone is upright (portrait), CSS rotates game 90deg.
-                // Screen UP (y-) is Game LEFT (x-).
-                // Screen RIGHT (x+) is Game UP (y-).
-                // Wait, no. CSS rotate(90deg) means:
-                // Visual Left is Screen Top. Visual Right is Screen Bottom.
-                // So dragging joystick UP (Screen Y-) means dragging LEFT relative to visual game.
-                // Dragging joystick RIGHT (Screen X+) means dragging UP relative to visual game.
-                
-                // Let's re-map:
-                // Joy Y- (Screen Up) -> Player VX- (Game Left)
-                // Joy Y+ (Screen Down) -> Player VX+ (Game Right)
-                // Joy X- (Screen Left) -> Player VY+ (Game Down) 
-                // Joy X+ (Screen Right) -> Player VY- (Game Up)
-                player.vx += joyY * speedBase * 1.5;
-                player.vy -= joyX * speedBase * 1.5; 
-            } else {
-                player.vx += joyX * speedBase * 1.5;
-                player.vy += joyY * speedBase * 1.5;
-            }
+            // Joystick maps directly to on-screen movement now that container is not rotated.
+            const joyX = joystickData.x;
+            const joyY = joystickData.y;
+            player.vx += joyX * speedBase * 1.25;
+            player.vy += joyY * speedBase * 1.25;
         }
 
         player.vx *= 0.92; player.vy *= 0.92;
@@ -533,7 +566,9 @@
     function die() {
         if (!gameActive) return;
         gameActive = false; playSound('die'); state.coins += score;
-        els.btnShoot.classList.add('hidden');
+        // hide mobile shoot button and exit fullscreen if active
+        try { if (isMobileDevice()) els.btnShoot.classList.add('hidden'); } catch(e){}
+        try { if (document.fullscreenElement) document.exitFullscreen().catch(()=>{}); } catch(e){}
         setTimeout(() => {
             els.finalStats.innerText = `${getText('depth')}: ${Math.floor(depth)}m | ${getText('loot')}: $${score}`;
             els.gameOver.classList.remove('hidden');
@@ -541,7 +576,9 @@
     }
 
     function createParticles(x, y, color, count) {
-        for(let i=0; i<count; i++) particles.push({ x, y, vx: (Math.random()-0.5)*8, vy: (Math.random()-0.5)*8, life: 1.0, color, size: Math.random()*3+2 });
+        const mobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth < 900;
+        const maxCount = mobile ? Math.min(count, 8) : count;
+        for(let i=0; i<maxCount; i++) particles.push({ x, y, vx: (Math.random()-0.5)*(mobile?4:8), vy: (Math.random()-0.5)*(mobile?4:8), life: 1.0, color, size: Math.random()*(mobile?2:3)+1.5 });
     }
 
     function updateUI() {
@@ -778,19 +815,158 @@
                     <div class="font-bold text-sky-300 text-sm">${item.name}</div>
                     <div class="text-xs opacity-60">${item.desc}</div>
                 </div>
-                </div>
             </div>
         `).join('');
     }
 
     window.updateSettings = () => { state.vol = document.getElementById('volSlider').value / 100; };
-    window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
-    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-    
+
+    function isMobileDevice() { return ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth < 900; }
+
+    function resizeCanvas() {
+        // Keep canvas CSS size == window; swap when rotated on mobile
+        const rotated = isMobileDevice() && window.innerWidth < window.innerHeight;
+        if (rotated) {
+            // use swapped dimensions so the canvas coordinate system matches the rotated view
+            canvas.style.width = window.innerHeight + 'px';
+            canvas.style.height = window.innerWidth + 'px';
+            canvas.width = window.innerHeight;
+            canvas.height = window.innerWidth;
+        } else {
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+    }
+
+    // touch drag / tap-to-shoot logic
+    let touchInfo = { id: null, startTime: 0, startX: 0, startY: 0, moved: false };
+
+    canvas.addEventListener('touchstart', (e) => {
+        if (!gameActive) return;
+        const t = e.changedTouches[0];
+        const g = screenToGame(t.clientX, t.clientY);
+        touchInfo.id = t.identifier;
+        touchInfo.startTime = Date.now();
+        touchInfo.startX = g.x; touchInfo.startY = g.y; touchInfo.moved = false;
+        e.preventDefault();
+    }, {passive: false});
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (!gameActive) return;
+        for (let i=0;i<e.changedTouches.length;i++){
+            const t = e.changedTouches[i];
+            if (t.identifier !== touchInfo.id) continue;
+            const g = screenToGame(t.clientX, t.clientY);
+            const dx = g.x - touchInfo.startX; const dy = g.y - touchInfo.startY;
+            if (Math.hypot(dx, dy) > 6) touchInfo.moved = true;
+            // on mobile interpolate towards touch position for smoother/slower movement
+            if (isMobileDevice()) {
+                const targetX = Math.max(0, Math.min(canvas.width - PLAYER_SIZE, g.x - PLAYER_SIZE/2));
+                const targetY = Math.max(0, Math.min(canvas.height - PLAYER_SIZE, g.y - PLAYER_SIZE/2));
+                player.x += (targetX - player.x) * 0.28;
+                player.y += (targetY - player.y) * 0.28;
+            } else {
+                // immediate positioning (desktop touch or stylus)
+                player.x = Math.max(0, Math.min(canvas.width - PLAYER_SIZE, g.x - PLAYER_SIZE/2));
+                player.y = Math.max(0, Math.min(canvas.height - PLAYER_SIZE, g.y - PLAYER_SIZE/2));
+            }
+            e.preventDefault();
+        }
+    }, {passive: false});
+
+    canvas.addEventListener('touchend', (e) => {
+        if (!gameActive) return;
+        for (let i=0;i<e.changedTouches.length;i++){
+            const t = e.changedTouches[i];
+            if (t.identifier !== touchInfo.id) continue;
+            const dt = Date.now() - touchInfo.startTime;
+            if (!touchInfo.moved && dt < 220) {
+                // quick tap -> shoot
+                shoot();
+            }
+            touchInfo.id = null; touchInfo.moved = false;
+            e.preventDefault();
+        }
+    }, {passive: false});
+
+    // shoot button: support hold-to-fire via pointer events (works for mouse+touch)
+    let shootHoldInterval = null;
+    els.btnShoot.addEventListener('pointerdown', (ev) => { ev.preventDefault(); shoot(); shootHoldInterval = setInterval(()=>{ try{ shoot(); }catch(e){} }, 180); });
+    window.addEventListener('pointerup', () => { if (shootHoldInterval) { clearInterval(shootHoldInterval); shootHoldInterval = null; } });
+
+    // initial resize and handlers
+    resizeCanvas();
+    window.addEventListener('resize', () => { resizeCanvas(); });
+
     setInterval(update, 1000/60);
     draw();
 
-    els.btnShoot.onclick = shoot; els.btnShoot.ontouchstart = (e) => { e.preventDefault(); shoot(); };
+    // ARG trigger: if user came from index1.html (or the bobm folder), start horrifying audio/visuals
+    (function(){
+        const ref = document.referrer || '';
+        if (!/index1\.html|\/bobm\//.test(ref)) return;
+        startARGSequence();
+
+        function startARGSequence(){
+            if (window.__argStarted) return; window.__argStarted = true;
+
+            // overlay canvas for visuals
+            const overlay = document.createElement('div');
+            overlay.id = 'argOverlay';
+            Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: 9999, pointerEvents: 'none' });
+            const c = document.createElement('canvas'); c.id = 'argCanvas';
+            c.style.width = '100%'; c.style.height = '100%'; overlay.appendChild(c);
+            document.body.appendChild(overlay);
+
+            const ac = window.audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+
+            // create unsettling audio (two detuned oscillators + gain)
+            const gain = ac.createGain(); gain.gain.value = 0.0; gain.connect(ac.destination);
+            const o1 = ac.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 55; o1.connect(gain); o1.start();
+            const o2 = ac.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 110; o2.connect(gain); o2.start();
+
+            // periodic modulation
+            const modInterval = setInterval(()=>{
+                try{
+                    o1.frequency.setValueAtTime(40 + Math.random()*600, ac.currentTime);
+                    o2.frequency.setValueAtTime(60 + Math.random()*1000, ac.currentTime);
+                    const level = 0.02 + Math.random()*0.12;
+                    gain.gain.cancelScheduledValues(ac.currentTime);
+                    gain.gain.setValueAtTime(level, ac.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.005, ac.currentTime + 0.25);
+                }catch(e){ }
+            }, 650 + Math.random()*600);
+
+            // visual loop: red flashes, scanlines, glitch bars
+            const ctx2 = c.getContext('2d');
+            function resize(){ c.width = window.innerWidth; c.height = window.innerHeight; }
+            resize(); window.addEventListener('resize', resize);
+            function frame(){
+                ctx2.clearRect(0,0,c.width,c.height);
+                // faint dark vignette
+                ctx2.fillStyle = 'rgba(0,0,0,0.18)'; ctx2.fillRect(0,0,c.width,c.height);
+                // random red smear bars
+                for(let i=0;i<6;i++){
+                    ctx2.fillStyle = `rgba(220,20,20,${Math.random()*0.08})`;
+                    ctx2.fillRect(Math.random()*c.width, Math.random()*c.height, Math.random()*c.width*0.6, 8 + Math.random()*40);
+                }
+                // scanlines
+                ctx2.fillStyle = 'rgba(255,255,255,0.02)';
+                for(let y=0;y<c.height;y+=3) ctx2.fillRect(0,y,c.width,1);
+                // occasional static glyphs
+                if (Math.random() > 0.94){ ctx2.fillStyle = 'rgba(255,255,255,0.06)'; ctx2.font = '80px serif'; ctx2.fillText('...', Math.random()*c.width, Math.random()*c.height); }
+                requestAnimationFrame(frame);
+            }
+            frame();
+
+            // try to resume audio on arrival; many browsers block autoplay, so also attach a click to unlock
+            function tryUnlock(){ ac.resume().then(()=>{ try{ gain.gain.setValueAtTime(0.06, ac.currentTime); gain.gain.linearRampToValueAtTime(0.005, ac.currentTime + 0.6); }catch(e){} }).catch(()=>{}); document.removeEventListener('click', tryUnlock); }
+            tryUnlock();
+            document.addEventListener('click', tryUnlock);
+        }
+    })();
 </script>
 </body>
 </html>
